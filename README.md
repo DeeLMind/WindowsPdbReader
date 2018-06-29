@@ -5,9 +5,9 @@ Cross platform Windows PDB Reader for .NET Core to read windows pdb
 
 In priority order.
 
-(1) To fix https://github.com/dotnet/corefx/issues/29375
-(2) Cross-platform support for https://github.com/Microsoft/BPerf
-(3) Support debugging Windows PDBs on VSCode (lines & locals - nothing else)
+1. To fix https://github.com/dotnet/corefx/issues/29375
+2. Cross-platform support for https://github.com/Microsoft/BPerf
+3. Support debugging Windows PDBs on VSCode (lines & locals - nothing else)
 
 # What works right now
 
