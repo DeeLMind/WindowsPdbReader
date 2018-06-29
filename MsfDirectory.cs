@@ -3,14 +3,18 @@
 // See the LICENSE file in the project root for more information.
 
 using System;
+using System.Buffers;
+using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace WindowsPdbReader
 {
     internal sealed class MsfDirectory
     {
-        private readonly DataStream[] streams;
+        private readonly List<DataStream> streams;
 
+        // @@BPerfIgnoreAllocation@@ -- pages (not poolable due to MemoryMarshal), stream (meh), List<DataStream> lifetime extends method, dsPages lifetime on DataStream, Lifetime outside of scope for DataStream objects
         public MsfDirectory(PageAwarePdbReader reader, int pageSize, int directorySize, int[] directoryRoot)
         {
             int numPages = reader.PagesFromSize(directorySize);
@@ -29,52 +33,75 @@ namespace WindowsPdbReader
                 pagesToGo -= pagesInThisPage;
             }
 
-            var stream = new DataStream(directorySize, pages);
-            var buffer = new byte[directorySize];
-            stream.Read(reader, buffer);
-
-            offset = 0;
-            int count = InterpretInt32(buffer, ref offset);
-
-            // 4..n
-            int[] sizes = new int[count];
-
-            for (int i = 0; i < sizes.Length; ++i)
+            byte[] buffer = default;
+            int[] sizes = default;
+            try
             {
-                sizes[i] = InterpretInt32(buffer, ref offset);
-            }
+                buffer = ArrayPool<byte>.Shared.Rent(directorySize);
+                var stream = new DataStream(directorySize, pages);
+                stream.Read(reader, buffer);
 
-            streams = new DataStream[count];
+                offset = 0;
+                int count = InterpretInt32(buffer, ref offset);
 
-            for (int i = 0; i < count; i++)
-            {
-                if (sizes[i] <= 0)
+                try
                 {
-                    streams[i] = new DataStream();
-                }
-                else
-                {
-                    int dataStreamPages = reader.PagesFromSize(sizes[i]);
-                    if (dataStreamPages > 0)
+                    // 4..n
+                    sizes = ArrayPool<int>.Shared.Rent(count);
+
+                    for (int i = 0; i < count; ++i)
                     {
-                        var dsPages = new int[dataStreamPages];
-                        for (int j = 0; j < dataStreamPages; ++j)
+                        sizes[i] = InterpretInt32(buffer, ref offset);
+                    }
+
+                    streams = new List<DataStream>(count);
+
+                    for (int i = 0; i < count; ++i)
+                    {
+                        if (sizes[i] <= 0)
                         {
-                            dsPages[j] = InterpretInt32(buffer, ref offset);
+                            streams.Add(new DataStream());
                         }
+                        else
+                        {
+                            int dsPagesCount = reader.PagesFromSize(sizes[i]);
+                            if (dsPagesCount > 0)
+                            {
+                                var dsPages = new int[dsPagesCount];
+                                for (int j = 0; j < dsPagesCount; ++j)
+                                {
+                                    dsPages[j] = InterpretInt32(buffer, ref offset);
+                                }
 
-                        streams[i] = new DataStream(sizes[i], dsPages);
+                                streams.Add(new DataStream(sizes[i], dsPages));
+                            }
+                            else
+                            {
+                                streams.Add(new DataStream(sizes[i], null));
+                            }
+                        }
                     }
-                    else
+                }
+                finally
+                {
+                    if (sizes != null)
                     {
-                        streams[i] = new DataStream(sizes[i], null);
+                        ArrayPool<int>.Shared.Return(sizes);
                     }
+                }
+            }
+            finally
+            {
+                if (buffer != null)
+                {
+                    ArrayPool<byte>.Shared.Return(buffer);
                 }
             }
         }
 
-        public DataStream[] Streams => this.streams;
+        public List<DataStream> Streams => this.streams;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static int InterpretInt32(Span<byte> buffer, ref int offset)
         {
             var retval = (int)((buffer[offset + 0] & 0xFF) |

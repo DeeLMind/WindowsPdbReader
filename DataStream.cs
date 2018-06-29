@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information.
 
 using System;
+using System.Runtime.CompilerServices;
 
 namespace WindowsPdbReader
 {
@@ -28,7 +29,7 @@ namespace WindowsPdbReader
         {
             if (buffer.Length < this.contentSize)
             {
-                throw new Exception($"buffer size is smaller than content size");
+                ThrowInsufficientBufferSizeException();
             }
 
             this.Read(reader, 0, buffer, 0, contentSize);
@@ -38,7 +39,7 @@ namespace WindowsPdbReader
         {
             if (position + data > this.contentSize)
             {
-                throw new Exception($"DataStream can't read off end of stream. (pos={position},siz={data})");
+                ThrowDataStreamEndOfFileException(position, data);
             }
 
             if (position == this.contentSize)
@@ -83,6 +84,18 @@ namespace WindowsPdbReader
                 left -= todo;
                 page++;
             }
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void ThrowInsufficientBufferSizeException()
+        {
+            throw new Exception($"buffer size is smaller than content size");
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void ThrowDataStreamEndOfFileException(int position, int data)
+        {
+            throw new Exception($"DataStream can't read off end of stream. (pos={position},siz={data})");
         }
     }
 }
